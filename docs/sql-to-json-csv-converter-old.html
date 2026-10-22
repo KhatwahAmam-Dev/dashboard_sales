@@ -1,0 +1,430 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Dump to JSON/CSV Converter - AM024</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,sans-serif; background:#f8fafc}
+.mono{font-family:JetBrains Mono,monospace}
+.card{background:white; border-radius:1rem; border:1px solid #e2e8f0; box-shadow:0 1px 2px rgba(0,0,0,.04)}
+</style>
+</head>
+<body class="p-4 md:p-6">
+<div class="max-w-[1600px] mx-auto space-y-6">
+
+<div class="card p-6">
+<div class="flex flex-wrap justify-between gap-4 items-start">
+<div>
+<h1 class="font-bold text-2xl">🔄 SQL Dump → JSON / CSV Converter</h1>
+<p class="text-sm text-slate-500 mt-1">Buka semua data di file <code>.sql</code> (PostgreSQL COPY & INSERT), convert jadi JSON / CSV / Excel. Support file besar 100MB+.</p>
+<div class="mt-2 text-xs bg-slate-100 rounded-lg p-2 mono">
+Detected format: COPY public.table_name (col1, col2, ...) FROM stdin; &lt;data&gt; \.<br>
+Auto parse: m_xplu, ms_item, dan semua table di dump AM024
+</div>
+</div>
+<div class="flex gap-2">
+<button onclick="exportAllJSON()" class="bg-slate-900 text-white text-xs px-4 py-2.5 rounded-full">Export Semua JSON (ZIP)</button>
+<button onclick="exportAllCSV()" class="bg-emerald-600 text-white text-xs px-4 py-2.5 rounded-full">Export Semua CSV (ZIP)</button>
+<button onclick="exportAllExcel()" class="bg-blue-600 text-white text-xs px-4 py-2.5 rounded-full">Export Semua Excel</button>
+</div>
+</div>
+
+<div class="mt-5 grid md:grid-cols-3 gap-4">
+<div class="border-2 border-dashed rounded-2xl p-6 text-center bg-slate-50 hover:bg-white cursor-pointer transition" id="dropZone">
+<div class="text-3xl">📂</div>
+<div class="font-semibold mt-2 text-sm">Drop file .sql / .txt / .dump disini</div>
+<div class="text-xs text-slate-500">atau klik untuk pilih file</div>
+<input type="file" id="fileInput" accept=".sql,.txt,.dump,.pgsql" class="hidden">
+<div class="mt-3 text-[11px] text-slate-400">Support: PostgreSQL COPY, INSERT INTO, 500MB+ file (streaming parse)</div>
+</div>
+<div class="space-y-3">
+<label class="text-xs font-semibold">Atau Paste SQL Dump (potongan)</label>
+<textarea id="pasteArea" rows="7" placeholder="COPY public.ms_item ... FROM stdin;
+AM024	11310218	HILO TEEN...
+\.
+
+COPY public.m_xplu ..." class="w-full text-[11px] border rounded-xl p-3 font-mono"></textarea>
+<div class="flex gap-2">
+<button onclick="parsePasted()" class="bg-slate-900 text-white text-xs px-4 py-2 rounded-full">Parse Paste</button>
+<button onclick="loadDemo()" class="border text-xs px-4 py-2 rounded-full">Load Demo AM024</button>
+</div>
+</div>
+<div class="bg-slate-900 text-slate-100 rounded-2xl p-4 text-xs">
+<h3 class="font-bold text-white mb-2">📊 Hasil Parse</h3>
+<div id="parseStats" class="space-y-2">
+<div class="flex justify-between"><span>File:</span><span id="statFile" class="mono">-</span></div>
+<div class="flex justify-between"><span>Size:</span><span id="statSize">-</span></div>
+<div class="flex justify-between"><span>Tables:</span><span id="statTables" class="font-bold">0</span></div>
+<div class="flex justify-between"><span>Total Rows:</span><span id="statRows" class="font-bold">0</span></div>
+</div>
+<div class="mt-4 pt-4 border-t border-slate-700">
+<div class="text-[11px] text-slate-400 mb-2">Tables detected:</div>
+<div id="tableListChips" class="flex flex-wrap gap-1"></div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="grid lg:grid-cols-[300px_1fr] gap-6">
+<!-- Sidebar tables -->
+<div class="card p-4 h-fit sticky top-4">
+<h3 class="font-semibold text-sm mb-3">📋 Daftar Table</h3>
+<input id="tableSearch" placeholder="Cari table..." class="w-full text-xs border rounded-full px-3 py-2 mb-3" oninput="filterTables()">
+<div id="tableList" class="space-y-1 max-h-[600px] overflow-auto text-xs"></div>
+</div>
+
+<!-- Main viewer -->
+<div class="space-y-4">
+<div class="card p-4">
+<div class="flex flex-wrap justify-between items-center gap-3">
+<div>
+<h2 id="activeTableName" class="font-bold text-lg">Pilih table di kiri</h2>
+<p id="activeTableMeta" class="text-xs text-slate-500"></p>
+</div>
+<div class="flex gap-2 flex-wrap">
+<input id="rowSearch" placeholder="Search di table ini..." class="text-xs border rounded-full px-3 py-2 w-64" oninput="renderActiveTable()">
+<select id="columnFilter" class="text-xs border rounded-full px-3 py-2"><option value="">Semua Kolom RH/Plano</option></select>
+<button onclick="exportActiveJSON()" class="text-xs bg-slate-900 text-white px-3 py-2 rounded-full">JSON</button>
+<button onclick="exportActiveCSV()" class="text-xs bg-emerald-600 text-white px-3 py-2 rounded-full">CSV</button>
+<button onclick="exportActiveExcel()" class="text-xs bg-blue-600 text-white px-3 py-2 rounded-full">Excel</button>
+</div>
+</div>
+
+<div class="mt-4 overflow-auto max-h-[700px] border rounded-xl" id="tableWrapper">
+<table class="w-full text-[11px]" id="dataTable">
+<thead class="sticky top-0 bg-slate-50 z-10 border-b" id="dataThead"></thead>
+<tbody id="dataTbody" class="mono"></tbody>
+</table>
+</div>
+<div class="flex justify-between items-center mt-3 text-xs">
+<div><span id="activeShown">0</span> / <span id="activeTotal">0</span> rows <span id="activeFiltered" class="text-slate-400"></span></div>
+<div class="flex gap-2 items-center">
+<button onclick="changePage(-1)" class="border px-3 py-1 rounded-full">Prev</button>
+<span id="pageInfo" class="px-2"></span>
+<button onclick="changePage(1)" class="border px-3 py-1 rounded-full">Next</button>
+<select id="perPage" class="border rounded-full px-2 py-1 text-xs" onchange="renderActiveTable()"><option value="50">50</option><option value="100" selected>100</option><option value="250">250</option><option value="500">500</option></select>
+</div>
+</div>
+</div>
+
+<div class="card p-4">
+<h3 class="font-semibold text-sm mb-2">🧠 JSON Preview (10 rows pertama)</h3>
+<pre id="jsonPreview" class="bg-slate-950 text-emerald-300 rounded-xl p-4 text-[11px] overflow-auto max-h-[300px]">Pilih table untuk lihat JSON</pre>
+</div>
+
+<div class="card p-4 bg-amber-50 border-amber-200">
+<h3 class="font-semibold text-sm mb-2">💡 Khusus AM024: RH & Plano sudah auto-detect</h3>
+<p class="text-xs">Kalau table <code>ms_item</code> terdeteksi, kolom <code>retur_h</code> (RH) dan <code>planogram</code> (Plano/No Rak) otomatis bisa di-filter. Contoh RH: R_H-90 DAYS, R_H-30, NO RETURN. Plano: DCA01.P.116.1.C atau \N = belum ada rak.</p>
+<div class="mt-2 flex gap-2">
+<button onclick="quickFilterRH()" class="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-full">Filter yang punya RH</button>
+<button onclick="quickFilterPlano()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-full">Filter ada Plano</button>
+<button onclick="quickFilterNoPlano()" class="text-xs bg-rose-600 text-white px-3 py-1.5 rounded-full">Filter Plano Kosong (\N)</button>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+
+<script>
+let db = {}; // { tableName: { columns: [], rows: [{},...], rawLines: [] } }
+let activeTable = null;
+let activeFiltered = [];
+let currentPage = 0;
+
+const demoSQL = `
+-- Data for Name: m_xplu; Type: TABLE DATA; Schema: public; Owner: postgres
+COPY public.m_xplu (plu, ket1, ket2, tgl_awal, tgl_akhir, on_hand) FROM stdin;
+1111025	Setting MD	Master BTL	2026-10-09	2040-09-30	0
+\.
+
+-- Data for Name: ms_item; Type: TABLE DATA; Schema: public; Owner: postgres
+COPY public.ms_item (kd_store, plu, descp, s_descp, barcode, avg_cost, on_hand, divisi, dept, kategori, subkat, cls_prod, tag_prod, isi1, isi2, isi3, sat1, sat2, sat3, f_bkl, retur_h, supp1, supp2, tgl_proses, ppn, max, min, minor, min_disp, planogram, kode_dc, f_retur, f_point, f_kons, tgl_buat) FROM stdin;
+AM024	11310218	HILO TEEN COKLAT 250GR_1C12P	HILO TEEN CHOCOLATE BOX 250G	749921000569	41967.81	6	1	113	1131	113102	5	B	1	12	0	PCS	CRT	0	F	0	DCA01	\N	2026-10-12	1	6.00	3.00	2.00	0	\N	DCA01	F	T	\N	2026-02-25
+AM024	11320381	GREENFIELDS UHT FULL CREAM MILK 125ML	GREENFIELDS UHT FULLCREAM 105ML	8993351124025	2846.00	10	1	113	1132	113203	3	B	1	40	0	PCS	CRT	0	F	R_H-90 DAYS	DCA01	\N	2026-10-12	1	24.00	12.00	2.00	0	\N	DCA01	T	T	F	2026-02-25
+AM024	30410253	PEAR CENTURY GR	PEAR CENTURY GR	10088	26.84	22358	3	304	3041	304102	3	K	1	0	0	GR	KG	0	T	0	DCA01.L.106.1.B	DCA01.S.205.1.E	2026-10-12	0	14000.00	3000.00	2000.00	0	\N	DCA01	F	T	\N	2026-02-25
+AM024	202201120	LUX TS VELVET JASMINE DG 75G_1C144P	LUX TS VELVET JASMINE DG 75G_1C144P	8999999036638	1.00	0	2	202	2022	202201	3	N	1	144	0	PCS	CRT	0	F	NO RETURN	DCA01		2026-10-12	1	8.00	4.00	2.00	0	\N	DCA01	F	T		2026-02-25
+AM024	30810174	SARI ROTI TAWAR JUMBO KUPAS 300GR	SARI ROTI TAWAR KUPAS JUMBO300G	8992907953287	15702.00	-1	3	308	3081	308101	3	K	1	0	0	PCS	0	0	T	R_H-1 DAYS	DCA01.N.002.1.C	\N	2026-10-12	1	8.00	2.00	2.00	0	\N	DCA01	T	T	F	2026-02-25
+\.
+`;
+
+function loadDemo(){
+document.getElementById('pasteArea').value = demoSQL;
+parseSQLText(demoSQL, "demo.sql", demoSQL.length);
+}
+
+function parsePasted(){
+const txt = document.getElementById('pasteArea').value;
+if(!txt.trim()){ alert('Paste SQL dulu Mas Bro'); return; }
+parseSQLText(txt, "pasted.sql", txt.length);
+}
+
+// File handling
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+dropZone.addEventListener('click', ()=>fileInput.click());
+dropZone.addEventListener('dragover', e=>{e.preventDefault(); dropZone.classList.add('bg-blue-50','border-blue-400');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('bg-blue-50','border-blue-400'));
+dropZone.addEventListener('drop', e=>{e.preventDefault(); dropZone.classList.remove('bg-blue-50','border-blue-400'); const f=e.dataTransfer.files[0]; if(f) handleFile(f);});
+fileInput.addEventListener('change', e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+
+function handleFile(file){
+document.getElementById('statFile').textContent = file.name;
+document.getElementById('statSize').textContent = (file.size/1024/1024).toFixed(2)+' MB';
+const reader = new FileReader();
+reader.onprogress = e=>{ if(e.lengthComputable){ dropZone.innerHTML = `<div class="text-sm">Loading ${(e.loaded/e.total*100).toFixed(0)}%...</div>`; } };
+reader.onload = ev=>{
+parseSQLText(ev.target.result, file.name, file.size);
+dropZone.innerHTML = `<div class="text-3xl">✅</div><div class="font-semibold mt-2 text-sm">${file.name} loaded</div><div class="text-xs text-slate-500">${(file.size/1024/1024).toFixed(2)} MB • ${Object.keys(db).length} tables</div>`;
+};
+reader.readAsText(file);
+}
+
+function parseSQLText(text, fileName, fileSize){
+db = {};
+// Regex for COPY blocks
+const copyRegex = /COPY\s+(?:public\.)?([a-zA-Z0-9_]+)\s*\(([^)]+)\)\s+FROM\s+stdin;([\s\S]*?)\\\.\s*/gi;
+let match;
+let totalRows = 0;
+while((match = copyRegex.exec(text)) !== null){
+const tableName = match[1];
+const colsRaw = match[2];
+const dataBlock = match[3];
+const columns = colsRaw.split(',').map(c=>c.trim().replace(/"/g,''));
+const rows = [];
+const lines = dataBlock.split('\n').filter(l=>l.trim() && !l.startsWith('--'));
+lines.forEach(line=>{
+if(!line.includes('\t') && line.includes(',')) return; // skip maybe not tab
+const parts = line.split('\t');
+if(parts.length < columns.length-2) return; // allow some slack
+const obj = {};
+columns.forEach((col, idx)=>{
+let val = parts[idx]!==undefined ? parts[idx] : '';
+if(val==='\N') val = null;
+obj[col]=val;
+});
+obj._raw = line;
+rows.push(obj);
+});
+if(!db[tableName]) db[tableName] = {columns, rows:[]};
+db[tableName].rows.push(...rows);
+db[tableName].columns = columns;
+totalRows+=rows.length;
+}
+// Also try INSERT INTO parsing as fallback
+if(Object.keys(db).length===0){
+const insertRegex = /INSERT\s+INTO\s+(?:public\.)?([a-zA-Z0-9_]+)\s*\(([^)]+)\)\s+VALUES\s*([^;]+);/gi;
+while((match = insertRegex.exec(text))!==null){
+const tableName = match[1];
+const columns = match[2].split(',').map(c=>c.trim().replace(/"/g,''));
+const valuesBlock = match[3];
+// naive parse
+const rowMatches = valuesBlock.match(/\([^)]+\)/g);
+if(rowMatches){
+rowMatches.forEach(r=>{
+const vals = r.slice(1,-1).split(',').map(v=>v.trim().replace(/^'|'$/g,''));
+const obj={};
+columns.forEach((c,i)=>obj[c]=vals[i]||null);
+if(!db[tableName]) db[tableName]={columns, rows:[]};
+db[tableName].rows.push(obj);
+totalRows++;
+});
+}
+}
+}
+document.getElementById('statTables').textContent = Object.keys(db).length;
+document.getElementById('statRows').textContent = totalRows.toLocaleString('id-ID');
+renderTableList();
+if(Object.keys(db).length>0){
+selectTable(Object.keys(db)[0]);
+}
+}
+
+function renderTableList(){
+const container = document.getElementById('tableList');
+const chips = document.getElementById('tableListChips');
+const search = document.getElementById('tableSearch').value.toLowerCase();
+const tables = Object.keys(db).filter(t=>!search || t.toLowerCase().includes(search));
+container.innerHTML = tables.map(t=>{
+const info = db[t];
+const hasRH = info.columns.includes('retur_h');
+const hasPlano = info.columns.includes('planogram');
+return `<button onclick="selectTable('${t}')" id="btn-${t}" class="w-full text-left px-3 py-2.5 rounded-xl border hover:bg-slate-50 flex justify-between items-center ${activeTable===t?'bg-slate-900 text-white border-slate-900':''}">
+<div><div class="font-semibold">${t}</div><div class="text-[10px] ${activeTable===t?'text-slate-300':'text-slate-500'}">${info.rows.length} rows • ${info.columns.length} cols ${hasRH?'• RH':''} ${hasPlano?'• Plano':''}</div></div>
+<div class="text-[10px]">→</div>
+</button>`;
+}).join('');
+chips.innerHTML = Object.keys(db).map(t=>`<span class="text-[10px] bg-slate-100 border px-2 py-1 rounded-full">${t} (${db[t].rows.length})</span>`).join('');
+}
+
+function filterTables(){ renderTableList(); }
+
+function selectTable(name){
+activeTable = name;
+currentPage=0;
+document.querySelectorAll('[id^="btn-"]').forEach(b=>b.classList.remove('bg-slate-900','text-white','border-slate-900'));
+const btn = document.getElementById('btn-'+name);
+if(btn) btn.classList.add('bg-slate-900','text-white','border-slate-900');
+const info = db[name];
+document.getElementById('activeTableName').textContent = name;
+document.getElementById('activeTableMeta').textContent = `${info.rows.length} rows • ${info.columns.join(', ')}`;
+const colFilter = document.getElementById('columnFilter');
+colFilter.innerHTML = '<option value="">Semua Kolom</option>' + info.columns.map(c=>`<option value="${c}">${c}${c==='retur_h'?' (RH)':''}${c==='planogram'?' (Plano)':''}</option>`).join('');
+renderActiveTable();
+}
+
+function renderActiveTable(){
+if(!activeTable) return;
+const info = db[activeTable];
+let rows = info.rows;
+const search = document.getElementById('rowSearch').value.toLowerCase();
+const colFilter = document.getElementById('columnFilter').value;
+if(search){
+rows = rows.filter(r=> Object.values(r).some(v=> String(v||'').toLowerCase().includes(search)));
+}
+if(colFilter){
+rows = rows.filter(r=>{ const v=r[colFilter]; if(colFilter==='retur_h') return v && v!=='0' && v!=='\N'; if(colFilter==='planogram') return v && v!=='\N' && v!==null; return v!==null && v!==''; });
+}
+activeFiltered = rows;
+const perPage = parseInt(document.getElementById('perPage').value)||100;
+const totalPages = Math.ceil(rows.length/perPage);
+if(currentPage>=totalPages) currentPage = Math.max(0, totalPages-1);
+const slice = rows.slice(currentPage*perPage, (currentPage+1)*perPage);
+
+// Header
+const thead = document.getElementById('dataThead');
+thead.innerHTML = `<tr>${info.columns.map(c=>`<th class="p-2 text-left whitespace-nowrap ${c==='retur_h'?'bg-amber-100':''} ${c==='planogram'?'bg-blue-100':''}">${c}</th>`).join('')}</tr>`;
+// Body
+const tbody = document.getElementById('dataTbody');
+tbody.innerHTML = slice.map(r=>{
+return `<tr class="border-b hover:bg-slate-50">${info.columns.map(c=>{
+let v = r[c];
+if(v===null) v='<span class="text-slate-300">\N</span>';
+else v = String(v).slice(0,120);
+if(c==='retur_h' && r[c] && r[c]!=='0'){ 
+const color = r[c]==='NO RETURN'?'bg-rose-100 text-rose-700': 'bg-emerald-100 text-emerald-700';
+v = `<span class="px-2 py-0.5 rounded-full text-[10px] ${color}">${r[c]}</span>`;
+}
+if(c==='planogram' && r[c] && r[c]!=='\N'){
+v = `<span class="font-bold text-blue-700">${r[c]}</span>`;
+}
+return `<td class="p-2 whitespace-nowrap max-w-[200px] truncate" title="${String(r[c]||'')}">${v}</td>`;
+}).join('')}</tr>`;
+}).join('');
+document.getElementById('activeShown').textContent = slice.length;
+document.getElementById('activeTotal').textContent = info.rows.length;
+document.getElementById('activeFiltered').textContent = rows.length!==info.rows.length ? ` (filtered ${rows.length})` : '';
+document.getElementById('pageInfo').textContent = `${currentPage+1} / ${totalPages||1}`;
+document.getElementById('jsonPreview').textContent = JSON.stringify(slice.slice(0,10), null, 2);
+}
+
+function changePage(dir){
+const totalPages = Math.ceil(activeFiltered.length / (parseInt(document.getElementById('perPage').value)||100));
+currentPage+=dir;
+if(currentPage<0) currentPage=0;
+if(currentPage>=totalPages) currentPage=totalPages-1;
+renderActiveTable();
+}
+
+function quickFilterRH(){
+document.getElementById('columnFilter').value='retur_h';
+renderActiveTable();
+}
+function quickFilterPlano(){
+document.getElementById('columnFilter').value='planogram';
+renderActiveTable();
+}
+function quickFilterNoPlano(){
+if(!activeTable) return;
+activeFiltered = db[activeTable].rows.filter(r=> !r.planogram || r.planogram==='\N' || r.planogram===null);
+currentPage=0;
+const perPage = parseInt(document.getElementById('perPage').value)||100;
+const slice = activeFiltered.slice(0, perPage);
+const info = db[activeTable];
+document.getElementById('dataTbody').innerHTML = slice.map(r=>`<tr class="border-b hover:bg-slate-50">${info.columns.map(c=>`<td class="p-2 whitespace-nowrap">${r[c]||'<span class="text-slate-300">\N</span>'}</td>`).join('')}</tr>`).join('');
+document.getElementById('activeShown').textContent = slice.length;
+document.getElementById('activeFiltered').textContent = ` (Plano kosong ${activeFiltered.length})`;
+document.getElementById('pageInfo').textContent = `1 / ${Math.ceil(activeFiltered.length/perPage)}`;
+}
+
+// Exports
+function exportActiveJSON(){
+if(!activeTable) return;
+const data = activeFiltered.length? activeFiltered : db[activeTable].rows;
+const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+const url = URL.createObjectURL(blob);
+const a=document.createElement('a'); a.href=url; a.download=`${activeTable}.json`; a.click();
+}
+function exportActiveCSV(){
+if(!activeTable) return;
+const info = db[activeTable];
+const data = activeFiltered.length? activeFiltered : info.rows;
+let csv = info.columns.join(',')+'\n';
+data.forEach(r=>{
+csv+= info.columns.map(c=>{
+let v = r[c]===null?'':String(r[c]).replace(/"/g,'""');
+if(v.includes(',')||v.includes('"')||v.includes('\n')) v=`"${v}"`;
+return v;
+}).join(',')+'\n';
+});
+const blob = new Blob([csv], {type:'text/csv'});
+const url = URL.createObjectURL(blob);
+const a=document.createElement('a'); a.href=url; a.download=`${activeTable}.csv`; a.click();
+}
+function exportActiveExcel(){
+if(!activeTable) return;
+const data = activeFiltered.length? activeFiltered : db[activeTable].rows;
+const ws = XLSX.utils.json_to_sheet(data);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, ws, activeTable.slice(0,31));
+XLSX.writeFile(wb, `${activeTable}.xlsx`);
+}
+function exportAllJSON(){
+if(Object.keys(db).length===0){ alert('Belum ada data'); return; }
+const zip = new JSZip();
+Object.keys(db).forEach(t=>{
+zip.file(`${t}.json`, JSON.stringify(db[t].rows, null, 2));
+});
+zip.generateAsync({type:'blob'}).then(blob=>{
+const url=URL.createObjectURL(blob);
+const a=document.createElement('a'); a.href=url; a.download='all_tables_json.zip'; a.click();
+});
+}
+function exportAllCSV(){
+if(Object.keys(db).length===0){ alert('Belum ada data'); return; }
+const zip = new JSZip();
+Object.keys(db).forEach(t=>{
+const info=db[t];
+let csv=info.columns.join(',')+'\n';
+info.rows.forEach(r=>{
+csv+=info.columns.map(c=>{
+let v=r[c]===null?'':String(r[c]).replace(/"/g,'""');
+if(v.includes(',')||v.includes('"')||v.includes('\n')) v=`"${v}"`;
+return v;
+}).join(',')+'\n';
+});
+zip.file(`${t}.csv`, csv);
+});
+zip.generateAsync({type:'blob'}).then(blob=>{
+const url=URL.createObjectURL(blob);
+const a=document.createElement('a'); a.href=url; a.download='all_tables_csv.zip'; a.click();
+});
+}
+function exportAllExcel(){
+if(Object.keys(db).length===0){ alert('Belum ada data'); return; }
+const wb = XLSX.utils.book_new();
+Object.keys(db).forEach(t=>{
+const ws = XLSX.utils.json_to_sheet(db[t].rows.slice(0, 100000)); // limit per sheet
+XLSX.utils.book_append_sheet(wb, ws, t.slice(0,31));
+});
+XLSX.writeFile(wb, `AM024_All_Tables_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+</script>
+</body>
+</html>

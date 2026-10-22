@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AM024 All-in-One - Parser + Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>body{font-family:Inter,sans-serif; background:#f8fafc}</style>
+</head>
+<body class="p-0">
+<div class="bg-slate-900 text-white p-4 sticky top-0 z-50 flex justify-between items-center">
+<div>
+<div class="font-bold text-lg">AMANDAMART AM024 - All in One Tool</div>
+<div class="text-xs text-slate-400">1 Link GitHub Pages untuk Parser + Dashboard | 57 Tables | RH & Plano</div>
+</div>
+<div class="flex gap-2">
+<button onclick="switchMain('parser')" id="btn-parser" class="text-xs bg-white text-slate-900 px-4 py-2 rounded-full font-semibold">🔧 Parser</button>
+<button onclick="switchMain('dashboard')" id="btn-dashboard" class="text-xs bg-slate-700 text-white px-4 py-2 rounded-full">📊 Dashboard</button>
+<a href="https://github.com/KhatwahAmam-Dev/dashboard_sales" target="_blank" class="text-xs border border-slate-600 px-4 py-2 rounded-full">GitHub</a>
+</div>
+</div>
+
+<div id="page-parser" class="p-6 space-y-4">
+<div class="bg-white rounded-2xl border p-6">
+<h2 class="font-bold text-xl">🔧 SQL Dump Parser (Versi JS - Tanpa Python, Jalan di Browser)</h2>
+<p class="text-sm text-slate-500 mt-1">Ini adalah versi JavaScript dari script Python Mas Bro. Bisa parse file 194MB langsung di browser (streaming line-by-line). Tidak perlu install Python. Untuk file >300MB tetap disarankan pakai Python .py offline.</p>
+<div class="mt-4 grid md:grid-cols-3 gap-4">
+<div class="border-2 border-dashed rounded-2xl p-6 text-center bg-slate-50 cursor-pointer" id="dropZone">
+<div class="text-3xl">📂</div>
+<div class="text-sm font-semibold mt-2">Drop .sql 194MB disini</div>
+<div class="text-xs text-slate-500">Klik untuk pilih file</div>
+<input type="file" id="fileInput" class="hidden" accept=".sql,.txt">
+<div id="prog" class="mt-2 text-xs"></div>
+<div class="w-full bg-slate-200 h-2 rounded-full mt-2 hidden" id="pbarWrap"><div id="pbar" class="h-2 bg-slate-900 rounded-full" style="width:0%"></div></div>
+</div>
+<div class="space-y-2">
+<div class="grid grid-cols-3 gap-2 text-xs">
+<div class="bg-slate-900 text-white rounded-xl p-3"><div>Tables</div><div id="statTables" class="text-xl font-bold">0</div></div>
+<div class="bg-white border rounded-xl p-3"><div>Total Rows</div><div id="statRows" class="text-xl font-bold">0</div></div>
+<div class="bg-emerald-600 text-white rounded-xl p-3"><div>Size</div><div id="statSize" class="font-bold">-</div></div>
+</div>
+<div class="flex gap-2 flex-wrap">
+<button onclick="exportAllJSON()" class="text-xs bg-slate-900 text-white px-3 py-2 rounded-full">JSON ZIP</button>
+<button onclick="exportAllCSV()" class="text-xs bg-emerald-600 text-white px-3 py-2 rounded-full">CSV ZIP</button>
+<button onclick="exportAllExcel()" class="text-xs bg-blue-600 text-white px-3 py-2 rounded-full">Excel All</button>
+</div>
+<div id="tableChips" class="flex flex-wrap gap-1 text-[10px] mt-2"></div>
+</div>
+<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs">
+<b>Butuh 1 Klik Desktop?</b><br>
+Download <code>RUN_ALL.bat</code> dan <code>parse_sql_dump_FINAL.py</code> dari GitHub repo. Double klik BAT file → pilih 1 → drag file .sql → jadi!<br><br>
+<b>GitHub Pages Setup:</b><br>
+Upload semua file HTML ini ke repo <code>dashboard_sales</code> branch <code>main</code> folder <code>/docs</code>, aktifkan Pages di Settings → Pages → Source: /docs. Link jadi: <code>https://khatwahamam-dev.github.io/dashboard_sales/</code>
+</div>
+</div>
+</div>
+<div class="grid md:grid-cols-[280px_1fr] gap-4">
+<div class="bg-white rounded-2xl border p-4 h-fit"><h3 class="font-semibold text-sm mb-2">Daftar Table (57)</h3><div id="tableList" class="space-y-1 text-xs max-h-[500px] overflow-auto"></div></div>
+<div class="bg-white rounded-2xl border p-4">
+<div class="flex justify-between"><h3 id="activeName" class="font-bold">Pilih table</h3><input id="rowSearch" placeholder="Search..." class="text-xs border rounded-full px-3 py-1.5 w-48" oninput="renderTable()"></div>
+<div class="mt-3 overflow-auto max-h-[500px] border rounded-xl"><table class="w-full text-[11px]"><thead id="thead" class="sticky top-0 bg-slate-50"></thead><tbody id="tbody" class="font-mono"></tbody></table></div>
+<div class="flex justify-between mt-2 text-xs"><div id="shown"></div><div class="flex gap-2"><button onclick="chg(-1)" class="border px-2 py-1 rounded-full">Prev</button><span id="pageInfo"></span><button onclick="chg(1)" class="border px-2 py-1 rounded-full">Next</button></div></div>
+</div>
+</div>
+</div>
+
+<div id="page-dashboard" class="hidden">
+<iframe id="dashFrame" src="dashboard-am024-v3-ultimate.html" class="w-full h-[90vh] border-0"></iframe>
+</div>
+
+</div>
+
+<script>
+let db={}, active=null, filtered=[], page=0; const perPage=100;
+function switchMain(m){
+document.getElementById('page-parser').classList.toggle('hidden', m!=='parser');
+document.getElementById('page-dashboard').classList.toggle('hidden', m!=='dashboard');
+document.getElementById('btn-parser').className = m==='parser' ? 'text-xs bg-white text-slate-900 px-4 py-2 rounded-full font-semibold' : 'text-xs bg-slate-700 text-white px-4 py-2 rounded-full';
+document.getElementById('btn-dashboard').className = m==='dashboard' ? 'text-xs bg-white text-slate-900 px-4 py-2 rounded-full font-semibold' : 'text-xs bg-slate-700 text-white px-4 py-2 rounded-full';
+}
+
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+dropZone.addEventListener('click', ()=>fileInput.click());
+dropZone.addEventListener('dragover', e=>{e.preventDefault(); dropZone.classList.add('bg-blue-50');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('bg-blue-50'));
+dropZone.addEventListener('drop', e=>{e.preventDefault(); dropZone.classList.remove('bg-blue-50'); const f=e.dataTransfer.files[0]; if(f) handleFile(f);});
+fileInput.addEventListener('change', e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+
+function handleFile(file){
+document.getElementById('statSize').textContent=(file.size/1024/1024).toFixed(2)+' MB';
+document.getElementById('prog').textContent='Reading...';
+document.getElementById('pbarWrap').classList.remove('hidden');
+const reader=new FileReader();
+reader.onprogress=e=>{
+if(e.lengthComputable){
+const pct=(e.loaded/e.total*100).toFixed(0);
+document.getElementById('pbar').style.width=pct+'%';
+document.getElementById('prog').textContent=pct+'%';
+}
+};
+reader.onload=e=>{
+document.getElementById('prog').textContent='Parsing line by line...';
+setTimeout(()=>{ parseStreaming(e.target.result); document.getElementById('prog').textContent='Done'; document.getElementById('pbar').style.width='100%'; }, 50);
+};
+reader.readAsText(file);
+}
+
+function parseStreaming(text){
+db={}; let currentTable=null, currentCols=null, currentRows=[], totalRows=0;
+const lines=text.split('\n');
+const copyRe=/COPY\s+(?:public\.)?"?([a-zA-Z0-9_]+)"?\s*(?:\(([^)]+)\))?\s+FROM\s+stdin;/i;
+for(let i=0;i<lines.length;i++){
+const line=lines[i]; const stripped=line.trim();
+if(line.startsWith('COPY')){
+if(currentTable && currentRows.length>0){
+if(!db[currentTable]) db[currentTable]={columns:currentCols, rows:[]};
+db[currentTable].rows.push(...currentRows); totalRows+=currentRows.length;
+}
+const m=line.match(copyRe);
+if(m){ currentTable=m[1]; const colsRaw=m[2]; if(colsRaw) currentCols=colsRaw.split(',').map(c=>c.trim().replace(/"/g,'')); else currentCols=null; currentRows=[]; }
+else{ currentTable=null; currentCols=null; currentRows=[]; }
+}else if(stripped==='\.' || stripped==='\\.'){
+if(currentTable && currentRows.length>0){
+if(!db[currentTable]) db[currentTable]={columns:currentCols, rows:[]};
+db[currentTable].rows.push(...currentRows); totalRows+=currentRows.length;
+}
+currentTable=null; currentCols=null; currentRows=[];
+}else if(currentTable && line.includes('\t')){
+const parts=line.split('\t');
+if(!currentCols) currentCols=parts.map((_,idx)=>`col_${idx}`);
+if(parts.length>=2){
+const obj={}; currentCols.forEach((c,idx)=>{ let v=parts[idx]; if(v==='\N' || v==='\\N') v=null; obj[c]=v; }); currentRows.push(obj);
+if(currentRows.length>=20000){ if(!db[currentTable]) db[currentTable]={columns:currentCols, rows:[]}; db[currentTable].rows.push(...currentRows); totalRows+=currentRows.length; currentRows=[]; }
+}
+}
+if(i%50000===0) document.getElementById('prog').textContent=`Parsing ${i}/${lines.length}... Tables:${Object.keys(db).length}`;
+}
+if(currentTable && currentRows.length>0){ if(!db[currentTable]) db[currentTable]={columns:currentCols, rows:[]}; db[currentTable].rows.push(...currentRows); totalRows+=currentRows.length; }
+document.getElementById('statTables').textContent=Object.keys(db).length;
+document.getElementById('statRows').textContent=totalRows.toLocaleString('id-ID');
+document.getElementById('tableChips').innerHTML=Object.keys(db).map(t=>`<span class="bg-slate-100 border px-2 py-1 rounded-full">${t} (${db[t].rows.length})</span>`).join('');
+renderList(); if(Object.keys(db).length>0) selectTable(Object.keys(db)[0]);
+}
+function renderList(){
+const c=document.getElementById('tableList');
+c.innerHTML=Object.keys(db).map(t=>{
+const info=db[t]; const hasRH=info.columns&&info.columns.includes('retur_h'); const hasPlano=info.columns&&info.columns.includes('planogram');
+return `<button onclick="selectTable('${t}')" id="btn-${t}" class="w-full text-left px-3 py-2 rounded-xl border hover:bg-slate-50 flex justify-between ${active===t?'bg-slate-900 text-white':''}"><div><div class="font-semibold">${t}</div><div class="text-[10px] ${active===t?'text-slate-300':'text-slate-500'}">${info.rows.length} rows ${hasRH?'• RH':''} ${hasPlano?'• Plano':''}</div></div><div>→</div></button>`;
+}).join('');
+}
+function selectTable(name){
+active=name; page=0;
+document.querySelectorAll('[id^="btn-"]').forEach(b=>b.classList.remove('bg-slate-900','text-white'));
+const btn=document.getElementById('btn-'+name); if(btn) btn.classList.add('bg-slate-900','text-white');
+const info=db[name];
+document.getElementById('activeName').textContent=name;
+renderTable();
+}
+function renderTable(){
+if(!active) return;
+const info=db[active];
+let rows=info.rows;
+const search=document.getElementById('rowSearch').value.toLowerCase();
+if(search) rows=rows.filter(r=>Object.values(r).some(v=>String(v||'').toLowerCase().includes(search)));
+filtered=rows;
+const totalPages=Math.ceil(rows.length/perPage);
+if(page>=totalPages) page=Math.max(0,totalPages-1);
+const slice=rows.slice(page*perPage,(page+1)*perPage);
+document.getElementById('thead').innerHTML=`<tr>${(info.columns||Object.keys(slice[0]||{})).map(c=>`<th class="p-2 text-left ${c==='retur_h'?'bg-amber-100':''} ${c==='planogram'?'bg-blue-100':''}">${c}</th>`).join('')}</tr>`;
+document.getElementById('tbody').innerHTML=slice.map(r=>`<tr class="border-b hover:bg-slate-50">${(info.columns||Object.keys(r)).map(c=>{
+let v=r[c]; if(v===null) v='<span class="text-slate-300">\N</span>'; else v=String(v).slice(0,120);
+if(c==='retur_h' && r[c]) v=`<span class="px-2 py-0.5 rounded-full text-[10px] ${r[c]==='NO RETURN'?'bg-rose-100 text-rose-700':'bg-emerald-100 text-emerald-700'}">${r[c]}</span>`;
+if(c==='planogram' && r[c] && r[c]!=='\N') v=`<span class="font-bold text-blue-700">${r[c]}</span>`;
+return `<td class="p-2 truncate max-w-[180px]">${v}</td>`;
+}).join('')}</tr>`).join('');
+document.getElementById('shown').textContent=`${slice.length} / ${info.rows.length} (filtered ${rows.length})`;
+document.getElementById('pageInfo').textContent=`${page+1} / ${totalPages||1}`;
+}
+function chg(d){
+const totalPages=Math.ceil(filtered.length/perPage);
+page+=d; if(page<0) page=0; if(page>=totalPages) page=totalPages-1;
+renderTable();
+}
+function exportAllJSON(){
+if(Object.keys(db).length===0) return;
+const zip=new JSZip(); Object.keys(db).forEach(t=>{ zip.file(`${t}.json`, JSON.stringify(db[t].rows,null,2)); }); zip.generateAsync({type:'blob'}).then(b=>{ const url=URL.createObjectURL(b); const a=document.createElement('a'); a.href=url; a.download='all_json.zip'; a.click(); });
+}
+function exportAllCSV(){
+if(Object.keys(db).length===0) return;
+const zip=new JSZip(); Object.keys(db).forEach(t=>{ const info=db[t]; let csv=(info.columns||[]).join(',')+'\n'; info.rows.forEach(r=>{ csv+=(info.columns||Object.keys(r)).map(c=>{ let v=r[c]===null?'':String(r[c]).replace(/"/g,'""'); if(v.includes(',')||v.includes('"')) v=`"${v}"`; return v; }).join(',')+'\n'; }); zip.file(`${t}.csv`, csv); }); zip.generateAsync({type:'blob'}).then(b=>{ const url=URL.createObjectURL(b); const a=document.createElement('a'); a.href=url; a.download='all_csv.zip'; a.click(); });
+}
+function exportAllExcel(){
+if(Object.keys(db).length===0) return;
+const wb=XLSX.utils.book_new(); Object.keys(db).forEach(t=>{ const ws=XLSX.utils.json_to_sheet(db[t].rows.slice(0,50000)); XLSX.utils.book_append_sheet(wb,ws,t.slice(0,31)); }); XLSX.writeFile(wb,`ALL_${Object.keys(db).length}tables.xlsx`);
+}
+</script>
+</body>
+</html>
